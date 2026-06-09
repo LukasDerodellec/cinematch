@@ -107,6 +107,7 @@ async function joinRoom() {
 
     await db.ref(`rooms/${roomId}/users/${userId}`).set(true);
     await db.ref(`rooms/${roomId}/status`).set('swiping');
+    startSwiping();
   } catch (err) {
     showError(err.message);
     btn.textContent = 'Rejoindre';
