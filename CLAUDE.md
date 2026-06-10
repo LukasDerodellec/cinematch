@@ -39,12 +39,13 @@ SETUP.md           — guide pas-à-pas pour reconfigurer un nouveau projet TMDB
 
 ```
 rooms/{roomId}/
-  status: "waiting" | "swiping" | "matched" | "nomatch"
+  status: "waiting" | "swiping"
   movies: [ {id, title, poster_path, overview, release_date, vote_average}, ... ]  (20 films, fixés à la création)
   users: { [userId]: true }            (2 entrées max)
   swipes/{movieId}/{userId}: true|false
   done/{userId}: true                  (écrit quand un utilisateur a fini ses 20 films)
-  matchedMovie: {...}                  (écrit seulement si match trouvé)
+  result: { status: "matched", matchedMovie: {...} } | { status: "nomatch" }
+          (écrit une seule fois, atomiquement, via transaction — voir claimStatus)
 ```
 
 ### Flux
@@ -63,17 +64,19 @@ rooms/{roomId}/
    du swipe, les deux clients écoutent `swipes/` en continu. À chaque
    écriture (de l'un ou l'autre), `findMatch()` revérifie tous les films ;
    dès qu'un film a `true` pour les deux `userId`, `claimStatus('matched', movie)`
-   passe `status` à `"matched"` via une **transaction** (le 1er client à
-   réussir gagne, l'autre voit l'abort et ne fait rien) et écrit
-   `matchedMovie`.
+   est appelé.
 6. Quand un utilisateur a swipé les 20 films sans qu'un match ait encore été
    trouvé → écran "waiting-match" + `checkBothDone()` :
    - écrit `done/{userId} = true`
    - si les deux sont `done`, refait un dernier `findMatch()` et appelle
      `claimStatus('matched'|'nomatch', movie)`
-7. Les deux écrans écoutent `status` (`listenForMatch`) → `"matched"` affiche
-   le film (`loadMatchFromDB`), `"nomatch"` affiche l'écran d'échec ; dans les
-   deux cas le listener `swipes/` est détaché (`.off()`).
+7. `claimStatus()` écrit `rooms/{roomId}/result` en **une seule transaction
+   atomique** (`{status, matchedMovie}` ensemble) — abort si `result` existe
+   déjà, donc un seul des deux clients "gagne", peu importe lequel.
+8. Les deux écrans écoutent `result` (`listenForMatch`) : dès qu'il existe,
+   `matchResolved = true`, le listener `swipes/` est détaché (`.off()`), puis
+   `status: "matched"` affiche le film (`showMatch`) ou `"nomatch"` affiche
+   l'écran d'échec.
 
 ## Bugs connus / corrigés
 
@@ -83,6 +86,15 @@ rooms/{roomId}/
 - **Corrigé** : le match ne s'affichait qu'après que les deux aient fini
   leurs 20 films. Fix : listener temps réel `watchForMatches()` +
   transaction Firebase `claimStatus()`.
+- **Corrigé** : le timeout de fin d'animation (`flyOut`, 350ms) pouvait
+  écraser un écran de match déjà affiché par `showScreen('waitingMatch')`.
+  Fix : flag `matchResolved` vérifié avant de changer d'écran.
+- **Corrigé** : le client qui déclenchait le match (2e à liker) ne voyait
+  jamais l'écran de match. Cause : `status` et `matchedMovie` étaient écrits
+  en 2 temps — la mise à jour optimiste locale de la transaction Firebase
+  rendait `status: "matched"` visible AVANT que `matchedMovie` soit écrit,
+  donc `loadMatchFromDB` lisait `null` et abandonnait silencieusement. Fix :
+  écriture atomique unique dans `result` (voir modèle de données ci-dessus).
 
 ## Limitations / pistes d'amélioration possibles
 

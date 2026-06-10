@@ -117,8 +117,6 @@ async function joinRoom() {
 function listenForPartner() {
   db.ref(`rooms/${roomId}/status`).on('value', snap => {
     if (snap.val() === 'swiping') startSwiping();
-    if (snap.val() === 'matched') loadMatchFromDB();
-    if (snap.val() === 'nomatch') showScreen('nomatch');
   });
 }
 
@@ -251,18 +249,13 @@ async function recordSwipe(movie, liked) {
 
 // ── Match detection ────────────────────────────────────────────────────────
 function listenForMatch() {
-  db.ref(`rooms/${roomId}/status`).on('value', snap => {
-    const s = snap.val();
-    if (s === 'matched') {
-      matchResolved = true;
-      db.ref(`rooms/${roomId}/swipes`).off();
-      loadMatchFromDB();
-    }
-    if (s === 'nomatch') {
-      matchResolved = true;
-      db.ref(`rooms/${roomId}/swipes`).off();
-      showScreen('nomatch');
-    }
+  db.ref(`rooms/${roomId}/result`).on('value', snap => {
+    const result = snap.val();
+    if (!result) return;
+    matchResolved = true;
+    db.ref(`rooms/${roomId}/swipes`).off();
+    if (result.status === 'matched') showMatch(result.matchedMovie);
+    else showScreen('nomatch');
   });
 }
 
@@ -288,15 +281,14 @@ function findMatch(swipes, userIds) {
   return null;
 }
 
-// Atomically moves the room out of "swiping", avoiding both users
-// writing the result at the same time.
+// Atomically records the room's outcome (status + matched movie together)
+// so no listener can ever see "matched" without the movie data, and so
+// both users can't write conflicting results at the same time.
 async function claimStatus(newStatus, matchedMovie) {
-  const result = await db.ref(`rooms/${roomId}/status`).transaction(current =>
-    current === 'swiping' ? newStatus : undefined
-  );
-  if (result.committed && matchedMovie) {
-    await db.ref(`rooms/${roomId}/matchedMovie`).set(matchedMovie);
-  }
+  await db.ref(`rooms/${roomId}/result`).transaction(current => {
+    if (current) return; // already resolved, abort
+    return matchedMovie ? { status: newStatus, matchedMovie } : { status: newStatus };
+  });
 }
 
 // Called when the local user reaches the end of their stack.
@@ -317,11 +309,7 @@ async function checkBothDone() {
   await claimStatus(matchedMovie ? 'matched' : 'nomatch', matchedMovie);
 }
 
-async function loadMatchFromDB() {
-  const snap = await db.ref(`rooms/${roomId}/matchedMovie`).once('value');
-  const movie = snap.val();
-  if (!movie) return;
-
+function showMatch(movie) {
   const year = movie.release_date ? movie.release_date.slice(0, 4) : '';
   document.getElementById('match-card').innerHTML = `
     <img src="${IMG_BASE}${movie.poster_path}" alt="${movie.title}">
