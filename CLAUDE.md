@@ -45,9 +45,9 @@ rooms/{roomId}/
   swipes/{movieId}/{userId}: true|false
   done/{userId}: true                  (écrit quand un utilisateur a fini ses 20 films)
   result: { status: "matched", matchedMovieId: number } | { status: "nomatch" }
-          (écrit une seule fois, atomiquement, via transaction — voir claimStatus.
-           Seul l'id est stocké ; le film complet est retrouvé dans `movies`,
-           identique des deux côtés)
+          (écrit une seule fois — voir claimStatus, garde via once('value')
+           avant le set(). Seul l'id est stocké ; le film complet est retrouvé
+           dans `movies`, identique des deux côtés)
 ```
 
 ### Flux
@@ -72,9 +72,11 @@ rooms/{roomId}/
    - écrit `done/{userId} = true`
    - si les deux sont `done`, refait un dernier `findMatch()` et appelle
      `claimStatus('matched'|'nomatch', movie)`
-7. `claimStatus()` écrit `rooms/{roomId}/result` en **une seule transaction
-   atomique** (`{status, matchedMovieId}` ensemble) — abort si `result`
-   existe déjà, donc un seul des deux clients "gagne", peu importe lequel.
+7. `claimStatus()` écrit `rooms/{roomId}/result` (`{status, matchedMovieId}`
+   ensemble) — vérifie d'abord via `once('value')` que `result` n'existe pas
+   déjà ; si les deux clients écrivent quand même en même temps, ils écrivent
+   la même valeur (pas de transaction Firebase, qui s'est montrée peu fiable
+   ici).
 8. Les deux écrans écoutent `result` (`listenForMatch`) : dès qu'il existe,
    `matchResolved = true`, le listener `swipes/` est détaché (`.off()`), le
    film est retrouvé via `movies.find(m => m.id === matchedMovieId)`, puis
@@ -98,15 +100,16 @@ rooms/{roomId}/
   rendait `status: "matched"` visible AVANT que `matchedMovie` soit écrit,
   donc `loadMatchFromDB` lisait `null` et abandonnait silencieusement. Fix :
   écriture atomique unique dans `result` (voir modèle de données ci-dessus).
-- **Corrigé** : même après le fix précédent, le 2e à liker restait bloqué
-  (pas de match affiché ET plus moyen de passer au film suivant, car
-  `matchResolved` passait à `true` mais l'écran ne changeait jamais — très
-  probablement une exception silencieuse dans le listener due à l'objet
-  `matchedMovie` complet (avec son tableau `genre_ids`, etc.) mal géré par
-  les transactions RTDB lors de la résolution de conflit entre les 2
-  transactions concurrentes. Fix : ne stocker que `matchedMovieId` (un
-  nombre) dans `result`, et retrouver le film complet via
-  `movies.find(m => m.id === matchedMovieId)`.
+- **Corrigé (tentative 1)** : même après le fix précédent, le 2e à liker
+  restait bloqué (pas de match affiché ET plus moyen de passer au film
+  suivant). Tentative : ne stocker que `matchedMovieId` (un nombre) dans
+  `result` au lieu de l'objet film complet — n'a pas suffi.
+- **Corrigé (tentative 2)** : le problème venait de `db.ref(...).transaction()`
+  lui-même — comportement de résolution de conflit peu fiable entre les 2
+  clients qui appellent `claimStatus` en même temps, laissant potentiellement
+  le listener `result` dans un état incohérent sans jamais déclencher
+  `showScreen`. Fix : suppression de `.transaction()`, remplacé par
+  `once('value')` (vérifie que `result` n'existe pas) puis `set()` simple.
 
 ## Limitations / pistes d'amélioration possibles
 
