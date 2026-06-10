@@ -13,6 +13,7 @@ let userId = sessionStorage.getItem('uid') || (() => {
 })();
 let movies = [];
 let currentIndex = 0;
+let matchResolved = false;
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
 const screens = {
@@ -233,6 +234,7 @@ function flyOut(card, dir) {
   card.style.opacity = '0';
   setTimeout(() => {
     currentIndex++;
+    if (matchResolved) return; // match/nomatch screen already shown, don't override it
     if (currentIndex >= movies.length) {
       showScreen('waitingMatch');
       checkBothDone();
@@ -252,10 +254,12 @@ function listenForMatch() {
   db.ref(`rooms/${roomId}/status`).on('value', snap => {
     const s = snap.val();
     if (s === 'matched') {
+      matchResolved = true;
       db.ref(`rooms/${roomId}/swipes`).off();
       loadMatchFromDB();
     }
     if (s === 'nomatch') {
+      matchResolved = true;
       db.ref(`rooms/${roomId}/swipes`).off();
       showScreen('nomatch');
     }
