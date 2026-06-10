@@ -43,6 +43,7 @@ rooms/{roomId}/
   movies: [ {id, title, poster_path, overview, release_date, vote_average}, ... ]  (20 films, fixés à la création)
   users: { [userId]: true }            (2 entrées max)
   swipes/{movieId}/{userId}: true|false
+  done/{userId}: true                  (écrit quand un utilisateur a fini ses 20 films)
   matchedMovie: {...}                  (écrit seulement si match trouvé)
 ```
 
@@ -50,37 +51,44 @@ rooms/{roomId}/
 
 1. **Créer une session** (`createRoom`) : fetch 2 pages TMDB populaires →
    shuffle → 20 films → écrit `rooms/{code6lettres}` avec `status: "waiting"`
-   → écran "waiting" avec le code à partager. `isUser1 = true`.
+   → écran "waiting" avec le code à partager.
 2. **Rejoindre** (`joinRoom`) : lit la room par code, ajoute son `userId`,
    passe `status` à `"swiping"`, puis `startSwiping()` directement.
-   `isUser1 = false`.
 3. Côté créateur, `listenForPartner()` écoute `status` et déclenche
    `startSwiping()` dès que ça passe à `"swiping"`.
 4. **Swipe** (`makeSwipeable` / boutons ♥ ✕) : drag CSS, au-delà de 80px →
    `flyOut` + `recordSwipe(movie, liked)` qui écrit
    `rooms/{roomId}/swipes/{movieId}/{userId}`.
-5. Quand un utilisateur a swipé les 20 films → écran "waiting-match" +
-   `checkBothDone()` :
-   - lit tous les `swipes`, cherche un film où les 2 `userId` ont voté `true`
-   - **seul `isUser1` écrit le résultat** (`status: "matched"` + `matchedMovie`,
-     ou `status: "nomatch"`) pour éviter une race condition
-6. Les deux écrans écoutent `status` → `"matched"` affiche le film
-   (`loadMatchFromDB`), `"nomatch"` affiche l'écran d'échec.
+5. **Détection de match en temps réel** (`watchForMatches`) : dès le début
+   du swipe, les deux clients écoutent `swipes/` en continu. À chaque
+   écriture (de l'un ou l'autre), `findMatch()` revérifie tous les films ;
+   dès qu'un film a `true` pour les deux `userId`, `claimStatus('matched', movie)`
+   passe `status` à `"matched"` via une **transaction** (le 1er client à
+   réussir gagne, l'autre voit l'abort et ne fait rien) et écrit
+   `matchedMovie`.
+6. Quand un utilisateur a swipé les 20 films sans qu'un match ait encore été
+   trouvé → écran "waiting-match" + `checkBothDone()` :
+   - écrit `done/{userId} = true`
+   - si les deux sont `done`, refait un dernier `findMatch()` et appelle
+     `claimStatus('matched'|'nomatch', movie)`
+7. Les deux écrans écoutent `status` (`listenForMatch`) → `"matched"` affiche
+   le film (`loadMatchFromDB`), `"nomatch"` affiche l'écran d'échec ; dans les
+   deux cas le listener `swipes/` est détaché (`.off()`).
 
 ## Bugs connus / corrigés
 
 - **Corrigé** : l'utilisateur qui rejoignait (user 2) restait bloqué en
   chargement infini car `joinRoom()` ne déclenchait jamais
   `startSwiping()`. Fix : appel ajouté en fin de `joinRoom()`.
+- **Corrigé** : le match ne s'affichait qu'après que les deux aient fini
+  leurs 20 films. Fix : listener temps réel `watchForMatches()` +
+  transaction Firebase `claimStatus()`.
 
 ## Limitations / pistes d'amélioration possibles
 
 - Pas de gestion si un 3e utilisateur tente de rejoindre une room pleine
   (écrase silencieusement la 2e place dans `users`)
 - Pas de nettoyage des rooms anciennes dans Firebase (vont s'accumuler)
-- `checkBothDone()` côté user2 ne fait rien tant que user1 n'a pas fini —
-  si user1 ferme l'onglet avant d'avoir terminé, user2 reste bloqué sur
-  "waiting-match" indéfiniment
 - Films toujours en `popular` FR — pourrait ajouter un choix de genre/plateforme
 - Les clés API (TMDB + Firebase) sont visibles publiquement dans le repo
   (normal pour ce type d'app cliente, mais à savoir)

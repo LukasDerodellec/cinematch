@@ -13,7 +13,6 @@ let userId = sessionStorage.getItem('uid') || (() => {
 })();
 let movies = [];
 let currentIndex = 0;
-let isUser1 = false;
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
 const screens = {
@@ -65,7 +64,6 @@ async function createRoom() {
     if (!fetchedMovies.length) throw new Error('Impossible de charger les films');
 
     roomId = generateCode();
-    isUser1 = true;
 
     await db.ref(`rooms/${roomId}`).set({
       status: 'waiting',
@@ -102,7 +100,6 @@ async function joinRoom() {
     if (room.status !== 'waiting') throw new Error('Session déjà en cours ou terminée');
 
     roomId = code;
-    isUser1 = false;
     movies = room.movies;
 
     await db.ref(`rooms/${roomId}/users/${userId}`).set(true);
@@ -130,6 +127,7 @@ function startSwiping() {
   showScreen('swipe');
   renderCards();
   listenForMatch();
+  watchForMatches();
 }
 
 function renderCards() {
@@ -253,42 +251,66 @@ async function recordSwipe(movie, liked) {
 function listenForMatch() {
   db.ref(`rooms/${roomId}/status`).on('value', snap => {
     const s = snap.val();
-    if (s === 'matched') loadMatchFromDB();
-    if (s === 'nomatch') showScreen('nomatch');
+    if (s === 'matched') {
+      db.ref(`rooms/${roomId}/swipes`).off();
+      loadMatchFromDB();
+    }
+    if (s === 'nomatch') {
+      db.ref(`rooms/${roomId}/swipes`).off();
+      showScreen('nomatch');
+    }
   });
 }
 
-async function checkBothDone() {
+// Live-checks every swipe (from either user) and claims the room as
+// "matched" the moment both users have said "oui" to the same movie.
+async function watchForMatches() {
   const usersSnap = await db.ref(`rooms/${roomId}/users`).once('value');
   const userIds = Object.keys(usersSnap.val() || {});
-  if (userIds.length < 2) {
-    // still waiting, poll again via the status listener
-    return;
-  }
+  if (userIds.length < 2) return;
 
-  const swipesSnap = await db.ref(`rooms/${roomId}/swipes`).once('value');
-  const swipes = swipesSnap.val() || {};
+  db.ref(`rooms/${roomId}/swipes`).on('value', snap => {
+    const swipes = snap.val() || {};
+    const matchedMovie = findMatch(swipes, userIds);
+    if (matchedMovie) claimStatus('matched', matchedMovie);
+  });
+}
 
-  let matchedMovie = null;
+function findMatch(swipes, userIds) {
   for (const movie of movies) {
     const votes = swipes[movie.id] || {};
-    const u1 = votes[userIds[0]];
-    const u2 = votes[userIds[1]];
-    if (u1 === true && u2 === true) {
-      matchedMovie = movie;
-      break;
-    }
+    if (votes[userIds[0]] === true && votes[userIds[1]] === true) return movie;
   }
+  return null;
+}
 
-  // Only user1 writes result to avoid race
-  if (isUser1) {
-    if (matchedMovie) {
-      await db.ref(`rooms/${roomId}`).update({ status: 'matched', matchedMovie });
-    } else {
-      await db.ref(`rooms/${roomId}/status`).set('nomatch');
-    }
+// Atomically moves the room out of "swiping", avoiding both users
+// writing the result at the same time.
+async function claimStatus(newStatus, matchedMovie) {
+  const result = await db.ref(`rooms/${roomId}/status`).transaction(current =>
+    current === 'swiping' ? newStatus : undefined
+  );
+  if (result.committed && matchedMovie) {
+    await db.ref(`rooms/${roomId}/matchedMovie`).set(matchedMovie);
   }
-  // user2 is already listening via listenForMatch()
+}
+
+// Called when the local user reaches the end of their stack.
+async function checkBothDone() {
+  await db.ref(`rooms/${roomId}/done/${userId}`).set(true);
+
+  const [doneSnap, usersSnap, swipesSnap] = await Promise.all([
+    db.ref(`rooms/${roomId}/done`).once('value'),
+    db.ref(`rooms/${roomId}/users`).once('value'),
+    db.ref(`rooms/${roomId}/swipes`).once('value'),
+  ]);
+
+  const userIds = Object.keys(usersSnap.val() || {});
+  const done = doneSnap.val() || {};
+  if (userIds.length < 2 || !userIds.every(id => done[id])) return;
+
+  const matchedMovie = findMatch(swipesSnap.val() || {}, userIds);
+  await claimStatus(matchedMovie ? 'matched' : 'nomatch', matchedMovie);
 }
 
 async function loadMatchFromDB() {
