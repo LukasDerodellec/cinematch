@@ -44,8 +44,10 @@ rooms/{roomId}/
   users: { [userId]: true }            (2 entrées max)
   swipes/{movieId}/{userId}: true|false
   done/{userId}: true                  (écrit quand un utilisateur a fini ses 20 films)
-  result: { status: "matched", matchedMovie: {...} } | { status: "nomatch" }
-          (écrit une seule fois, atomiquement, via transaction — voir claimStatus)
+  result: { status: "matched", matchedMovieId: number } | { status: "nomatch" }
+          (écrit une seule fois, atomiquement, via transaction — voir claimStatus.
+           Seul l'id est stocké ; le film complet est retrouvé dans `movies`,
+           identique des deux côtés)
 ```
 
 ### Flux
@@ -71,10 +73,11 @@ rooms/{roomId}/
    - si les deux sont `done`, refait un dernier `findMatch()` et appelle
      `claimStatus('matched'|'nomatch', movie)`
 7. `claimStatus()` écrit `rooms/{roomId}/result` en **une seule transaction
-   atomique** (`{status, matchedMovie}` ensemble) — abort si `result` existe
-   déjà, donc un seul des deux clients "gagne", peu importe lequel.
+   atomique** (`{status, matchedMovieId}` ensemble) — abort si `result`
+   existe déjà, donc un seul des deux clients "gagne", peu importe lequel.
 8. Les deux écrans écoutent `result` (`listenForMatch`) : dès qu'il existe,
-   `matchResolved = true`, le listener `swipes/` est détaché (`.off()`), puis
+   `matchResolved = true`, le listener `swipes/` est détaché (`.off()`), le
+   film est retrouvé via `movies.find(m => m.id === matchedMovieId)`, puis
    `status: "matched"` affiche le film (`showMatch`) ou `"nomatch"` affiche
    l'écran d'échec.
 
@@ -95,6 +98,15 @@ rooms/{roomId}/
   rendait `status: "matched"` visible AVANT que `matchedMovie` soit écrit,
   donc `loadMatchFromDB` lisait `null` et abandonnait silencieusement. Fix :
   écriture atomique unique dans `result` (voir modèle de données ci-dessus).
+- **Corrigé** : même après le fix précédent, le 2e à liker restait bloqué
+  (pas de match affiché ET plus moyen de passer au film suivant, car
+  `matchResolved` passait à `true` mais l'écran ne changeait jamais — très
+  probablement une exception silencieuse dans le listener due à l'objet
+  `matchedMovie` complet (avec son tableau `genre_ids`, etc.) mal géré par
+  les transactions RTDB lors de la résolution de conflit entre les 2
+  transactions concurrentes. Fix : ne stocker que `matchedMovieId` (un
+  nombre) dans `result`, et retrouver le film complet via
+  `movies.find(m => m.id === matchedMovieId)`.
 
 ## Limitations / pistes d'amélioration possibles
 

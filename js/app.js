@@ -254,7 +254,10 @@ function listenForMatch() {
     if (!result) return;
     matchResolved = true;
     db.ref(`rooms/${roomId}/swipes`).off();
-    if (result.status === 'matched') showMatch(result.matchedMovie);
+    const movie = result.status === 'matched'
+      ? movies.find(m => m.id === result.matchedMovieId)
+      : null;
+    if (movie) showMatch(movie);
     else showScreen('nomatch');
   });
 }
@@ -281,13 +284,15 @@ function findMatch(swipes, userIds) {
   return null;
 }
 
-// Atomically records the room's outcome (status + matched movie together)
-// so no listener can ever see "matched" without the movie data, and so
-// both users can't write conflicting results at the same time.
+// Atomically records the room's outcome (status + matched movie id together)
+// so no listener can ever see "matched" without knowing which movie, and so
+// both users can't write conflicting results at the same time. Only the id
+// (a plain number) is stored — both clients already share the same `movies`
+// array and can look up the full movie from it.
 async function claimStatus(newStatus, matchedMovie) {
   await db.ref(`rooms/${roomId}/result`).transaction(current => {
     if (current) return; // already resolved, abort
-    return matchedMovie ? { status: newStatus, matchedMovie } : { status: newStatus };
+    return matchedMovie ? { status: newStatus, matchedMovieId: matchedMovie.id } : { status: newStatus };
   });
 }
 
