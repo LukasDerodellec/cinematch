@@ -25,7 +25,7 @@ ce sera le film de la soirée.
 ## Structure des fichiers
 
 ```
-index.html        — les 6 "écrans" de l'app (home, waiting, swipe, waiting-match, match, nomatch)
+index.html        — les 7 "écrans" de l'app (lock, home, waiting, swipe, waiting-match, match, nomatch)
 css/style.css      — thème sombre, animations Tinder (cartes, stamps OUI/NON)
 js/config.js       — clés TMDB_API_KEY + firebaseConfig (déjà remplies)
 js/app.js          — toute la logique
@@ -35,9 +35,29 @@ SETUP.md           — guide pas-à-pas pour reconfigurer un nouveau projet TMDB
 
 ## Logique applicative (js/app.js)
 
+### Contrôle d'accès (easter egg)
+
+Au chargement, l'app affiche un écran "lock" avec uniquement le logo 🎬. Tant
+que `appState/open` n'est pas `true` dans Firebase, tous les visiteurs restent
+sur cet écran (pas d'accès à l'accueil ni aux sessions).
+
+- **5 clics sur le logo** (écran lock ou écran home) → `toggleAccess()`
+  bascule `appState/open` (`true`/`false`) dans Firebase.
+- Un listener temps réel (`appState/open`) fait basculer automatiquement
+  l'écran lock ↔ home pour tous les visiteurs dès que la valeur change —
+  tant qu'ils n'ont pas encore rejoint/créé de session (`roomId` vide).
+- Reverrouiller (5 clics sur le logo de l'accueil) n'éjecte personne déjà en
+  session, ça empêche juste les nouveaux visiteurs d'accéder à l'accueil.
+
+⚠️ Pas une vraie sécurité (code source public), juste un filtre contre les
+visiteurs occasionnels qui tomberaient sur l'URL.
+
 ### Modèle de données Firebase
 
 ```
+appState/
+  open: true | false             (contrôle d'accès, cf. ci-dessus)
+
 rooms/{roomId}/
   status: "waiting" | "swiping"
   movies: [ {id, title, poster_path, overview, release_date, vote_average}, ... ]  (20 films, fixés à la création)

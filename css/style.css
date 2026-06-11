@@ -37,12 +37,25 @@ body {
 }
 .screen.active { display: flex; }
 
+/* ── Lock ── */
+#screen-lock .logo {
+  font-size: 6rem;
+  margin-bottom: 0;
+  user-select: none;
+}
+.logo-tap {
+  animation: logoTap 0.15s ease;
+}
+@keyframes logoTap {
+  50% { transform: scale(0.85); }
+}
+
 /* ── Home ── */
 .hero {
   text-align: center;
   margin-bottom: 3rem;
 }
-.logo { font-size: 4rem; margin-bottom: 0.5rem; }
+.logo { font-size: 4rem; margin-bottom: 0.5rem; user-select: none; }
 h1 { font-size: 2.5rem; font-weight: 800; letter-spacing: -1px; }
 .tagline { color: var(--text-dim); margin-top: 0.5rem; font-size: 1rem; }
 

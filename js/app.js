@@ -17,6 +17,7 @@ let matchResolved = false;
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
 const screens = {
+  lock:         document.getElementById('screen-lock'),
   home:         document.getElementById('screen-home'),
   waiting:      document.getElementById('screen-waiting'),
   swipe:        document.getElementById('screen-swipe'),
@@ -29,6 +30,42 @@ function showScreen(name) {
   Object.values(screens).forEach(s => s.classList.remove('active'));
   screens[name].classList.add('active');
 }
+
+// ── Access gate (easter egg) ────────────────────────────────────────────────
+// The site stays on a logo-only "lock" screen until someone clicks the logo
+// 5 times, which toggles a shared `appState/open` flag in Firebase. Same
+// gesture on the home screen logo locks it again for future visitors.
+let logoClickCount = 0;
+let logoClickTimer = null;
+
+function setupLogoToggle(logoEl) {
+  logoEl.addEventListener('click', () => {
+    logoEl.classList.add('logo-tap');
+    setTimeout(() => logoEl.classList.remove('logo-tap'), 150);
+
+    logoClickCount++;
+    clearTimeout(logoClickTimer);
+    logoClickTimer = setTimeout(() => { logoClickCount = 0; }, 1500);
+
+    if (logoClickCount >= 5) {
+      logoClickCount = 0;
+      toggleAccess();
+    }
+  });
+}
+
+async function toggleAccess() {
+  const snap = await db.ref('appState/open').once('value');
+  await db.ref('appState/open').set(snap.val() !== true);
+}
+
+setupLogoToggle(document.getElementById('lock-logo'));
+setupLogoToggle(document.getElementById('home-logo'));
+
+db.ref('appState/open').on('value', snap => {
+  if (roomId) return; // a session is already in progress, don't disrupt it
+  showScreen(snap.val() === true ? 'home' : 'lock');
+});
 
 // ── Home ───────────────────────────────────────────────────────────────────
 document.getElementById('btn-create').addEventListener('click', createRoom);

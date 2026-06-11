@@ -6,6 +6,10 @@
         ".write": true,
         ".indexOn": ["status"]
       }
+    },
+    "appState": {
+      ".read": true,
+      ".write": true
     }
   }
 }
