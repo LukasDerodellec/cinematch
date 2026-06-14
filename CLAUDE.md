@@ -58,6 +58,9 @@ visiteurs occasionnels qui tomberaient sur l'URL.
 appState/
   open: true | false             (contrôle d'accès, cf. ci-dessus)
 
+matchedMovies/{movieId}: true    (films déjà matchés lors d'une session précédente —
+                                   exclus de fetchMovies pour ne plus être proposés)
+
 rooms/{roomId}/
   status: "waiting" | "swiping"
   movies: [ {id, title, poster_path, overview, release_date, vote_average}, ... ]  (20 films, fixés à la création)
@@ -73,8 +76,9 @@ rooms/{roomId}/
 ### Flux
 
 1. **Créer une session** (`createRoom`) : fetch 2 pages TMDB populaires →
-   shuffle → 20 films → écrit `rooms/{code6lettres}` avec `status: "waiting"`
-   → écran "waiting" avec le code à partager.
+   exclut les films déjà présents dans `matchedMovies` → shuffle → 20 films →
+   écrit `rooms/{code6lettres}` avec `status: "waiting"` → écran "waiting"
+   avec le code à partager.
 2. **Rejoindre** (`joinRoom`) : lit la room par code, ajoute son `userId`,
    passe `status` à `"swiping"`, puis `startSwiping()` directement.
 3. Côté créateur, `listenForPartner()` écoute `status` et déclenche
@@ -96,7 +100,8 @@ rooms/{roomId}/
    ensemble) — vérifie d'abord via `once('value')` que `result` n'existe pas
    déjà ; si les deux clients écrivent quand même en même temps, ils écrivent
    la même valeur (pas de transaction Firebase, qui s'est montrée peu fiable
-   ici).
+   ici). Si `status === "matched"`, écrit aussi `matchedMovies/{movieId} = true`
+   (écriture idempotente, sans risque même si les deux clients la font).
 8. Les deux écrans écoutent `result` (`listenForMatch`) : dès qu'il existe,
    `matchResolved = true`, le listener `swipes/` est détaché (`.off()`), le
    film est retrouvé via `movies.find(m => m.id === matchedMovieId)`, puis

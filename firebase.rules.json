@@ -10,6 +10,10 @@
     "appState": {
       ".read": true,
       ".write": true
+    },
+    "matchedMovies": {
+      ".read": true,
+      ".write": true
     }
   }
 }

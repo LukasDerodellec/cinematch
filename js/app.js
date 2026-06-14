@@ -331,6 +331,9 @@ async function claimStatus(newStatus, matchedMovie) {
   if (snap.exists()) return;
   const data = matchedMovie ? { status: newStatus, matchedMovieId: matchedMovie.id } : { status: newStatus };
   await db.ref(`rooms/${roomId}/result`).set(data);
+  if (newStatus === 'matched' && matchedMovie) {
+    await db.ref(`matchedMovies/${matchedMovie.id}`).set(true);
+  }
 }
 
 // Called when the local user reaches the end of their stack.
@@ -361,6 +364,9 @@ function showMatch(movie) {
 
 // ── TMDB ──────────────────────────────────────────────────────────────────
 async function fetchMovies() {
+  const matchedSnap = await db.ref('matchedMovies').once('value');
+  const matchedIds = new Set(Object.keys(matchedSnap.val() || {}).map(Number));
+
   // Fetch 2 pages of popular movies and shuffle
   const pages = [1, 2];
   const results = await Promise.all(pages.map(p =>
@@ -368,7 +374,7 @@ async function fetchMovies() {
       .then(r => r.json())
       .then(d => d.results || [])
   ));
-  const all = results.flat().filter(m => m.poster_path && m.overview);
+  const all = results.flat().filter(m => m.poster_path && m.overview && !matchedIds.has(m.id));
   return shuffle(all).slice(0, MOVIES_PER_SESSION);
 }
 
