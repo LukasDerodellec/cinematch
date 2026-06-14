@@ -31,6 +31,54 @@
     <p id="home-error" class="error-msg hidden"></p>
   </div>
 
+  <!-- Screen: Create options (genre/decade filters) -->
+  <div id="screen-create-options" class="screen">
+    <div class="hero">
+      <div class="logo">🎬</div>
+      <h1>Nouvelle session</h1>
+      <p class="tagline">Affine la sélection de films (facultatif)</p>
+    </div>
+    <div class="home-actions">
+      <label class="select-label" for="create-genre">Genre</label>
+      <select id="create-genre" class="select-input">
+        <option value="">Tous les genres</option>
+        <option value="28">Action</option>
+        <option value="12">Aventure</option>
+        <option value="16">Animation</option>
+        <option value="35">Comédie</option>
+        <option value="80">Crime</option>
+        <option value="99">Documentaire</option>
+        <option value="18">Drame</option>
+        <option value="10751">Familial</option>
+        <option value="14">Fantastique</option>
+        <option value="36">Histoire</option>
+        <option value="27">Horreur</option>
+        <option value="10402">Musique</option>
+        <option value="9648">Mystère</option>
+        <option value="10749">Romance</option>
+        <option value="878">Science-Fiction</option>
+        <option value="53">Thriller</option>
+        <option value="10752">Guerre</option>
+        <option value="37">Western</option>
+      </select>
+
+      <label class="select-label" for="create-decade">Époque</label>
+      <select id="create-decade" class="select-input">
+        <option value="">Toutes les époques</option>
+        <option value="2020">2020 - 2029</option>
+        <option value="2010">2010 - 2019</option>
+        <option value="2000">2000 - 2009</option>
+        <option value="1990">1990 - 1999</option>
+        <option value="1980">1980 - 1989</option>
+        <option value="before1980">Avant 1980</option>
+      </select>
+
+      <button id="btn-create-confirm" class="btn btn-primary">Lancer la session</button>
+      <button id="btn-create-back" class="btn btn-secondary">Retour</button>
+    </div>
+    <p id="create-error" class="error-msg hidden"></p>
+  </div>
+
   <!-- Screen: Waiting -->
   <div id="screen-waiting" class="screen">
     <div class="waiting-content">

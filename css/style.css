@@ -91,6 +91,24 @@ h1 { font-size: 2.5rem; font-weight: 800; letter-spacing: -1px; }
 }
 #room-code-input:focus { border-color: var(--accent); }
 
+.select-label {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+.select-input {
+  background: var(--surface);
+  border: 2px solid #333;
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 0.75rem 1rem;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.select-input:focus { border-color: var(--accent); }
+
 /* ── Buttons ── */
 .btn {
   border: none;

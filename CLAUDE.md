@@ -25,7 +25,7 @@ ce sera le film de la soirée.
 ## Structure des fichiers
 
 ```
-index.html        — les 7 "écrans" de l'app (lock, home, waiting, swipe, waiting-match, match, nomatch)
+index.html        — les 8 "écrans" de l'app (lock, home, create-options, waiting, swipe, waiting-match, match, nomatch)
 css/style.css      — thème sombre, animations Tinder (cartes, stamps OUI/NON)
 js/config.js       — clés TMDB_API_KEY + firebaseConfig (déjà remplies)
 js/app.js          — toute la logique
@@ -75,10 +75,16 @@ rooms/{roomId}/
 
 ### Flux
 
-1. **Créer une session** (`createRoom`) : fetch 2 pages TMDB populaires →
-   exclut les films déjà présents dans `matchedMovies` → shuffle → 20 films →
-   écrit `rooms/{code6lettres}` avec `status: "waiting"` → écran "waiting"
-   avec le code à partager.
+1. **Créer une session** : `btn-create` affiche l'écran "create-options" où
+   on choisit un genre et/ou une décennie (facultatif, "tous/toutes" par
+   défaut). `btn-create-confirm` lance `createRoom()` :
+   `fetchMovies(genreId, decade)` interroge `/discover/movie` (TMDB) avec
+   ces filtres + `sort_by=popularity.desc`, récupère la page 1 et une page
+   aléatoire parmi les `total_pages` (max 20) pour varier le pool d'une
+   session à l'autre → exclut les films déjà présents dans `matchedMovies`
+   → shuffle → 20 films → écrit `rooms/{code6lettres}` avec
+   `status: "waiting"` → écran "waiting" avec le code à partager.
+   `btn-create-back` revient à l'accueil.
 2. **Rejoindre** (`joinRoom`) : lit la room par code, ajoute son `userId`,
    passe `status` à `"swiping"`, puis `startSwiping()` directement.
 3. Côté créateur, `listenForPartner()` écoute `status` et déclenche
@@ -141,7 +147,8 @@ rooms/{roomId}/
 - Pas de gestion si un 3e utilisateur tente de rejoindre une room pleine
   (écrase silencieusement la 2e place dans `users`)
 - Pas de nettoyage des rooms anciennes dans Firebase (vont s'accumuler)
-- Films toujours en `popular` FR — pourrait ajouter un choix de genre/plateforme
+- Filtres genre/décennie disponibles à la création, mais toujours `language=fr-FR`
+  et pas de filtre par plateforme de streaming
 - Les clés API (TMDB + Firebase) sont visibles publiquement dans le repo
   (normal pour ce type d'app cliente, mais à savoir)
 

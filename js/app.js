@@ -19,6 +19,7 @@ let matchResolved = false;
 const screens = {
   lock:         document.getElementById('screen-lock'),
   home:         document.getElementById('screen-home'),
+  createOptions: document.getElementById('screen-create-options'),
   waiting:      document.getElementById('screen-waiting'),
   swipe:        document.getElementById('screen-swipe'),
   waitingMatch: document.getElementById('screen-waiting-match'),
@@ -68,7 +69,9 @@ db.ref('appState/open').on('value', snap => {
 });
 
 // ── Home ───────────────────────────────────────────────────────────────────
-document.getElementById('btn-create').addEventListener('click', createRoom);
+document.getElementById('btn-create').addEventListener('click', () => showScreen('createOptions'));
+document.getElementById('btn-create-back').addEventListener('click', () => showScreen('home'));
+document.getElementById('btn-create-confirm').addEventListener('click', createRoom);
 document.getElementById('btn-join-show').addEventListener('click', () => {
   document.getElementById('join-form').classList.toggle('hidden');
 });
@@ -84,8 +87,8 @@ document.getElementById('btn-copy').addEventListener('click', () => {
 document.getElementById('btn-restart').addEventListener('click', () => location.reload());
 document.getElementById('btn-restart2').addEventListener('click', () => location.reload());
 
-function showError(msg) {
-  const el = document.getElementById('home-error');
+function showError(msg, elId = 'home-error') {
+  const el = document.getElementById(elId);
   el.textContent = msg;
   el.classList.remove('hidden');
   setTimeout(() => el.classList.add('hidden'), 3000);
@@ -93,13 +96,16 @@ function showError(msg) {
 
 // ── Room creation ──────────────────────────────────────────────────────────
 async function createRoom() {
-  const btn = document.getElementById('btn-create');
+  const btn = document.getElementById('btn-create-confirm');
   btn.textContent = 'Chargement...';
   btn.disabled = true;
 
+  const genreId = document.getElementById('create-genre').value;
+  const decade = document.getElementById('create-decade').value;
+
   try {
-    const fetchedMovies = await fetchMovies();
-    if (!fetchedMovies.length) throw new Error('Impossible de charger les films');
+    const fetchedMovies = await fetchMovies(genreId, decade);
+    if (!fetchedMovies.length) throw new Error('Aucun film trouvé pour ces critères');
 
     roomId = generateCode();
 
@@ -116,8 +122,8 @@ async function createRoom() {
     listenForPartner();
   } catch (err) {
     console.error(err);
-    showError('Erreur : ' + err.message);
-    btn.textContent = 'Créer une session';
+    showError('Erreur : ' + err.message, 'create-error');
+    btn.textContent = 'Lancer la session';
     btn.disabled = false;
   }
 }
@@ -363,18 +369,42 @@ function showMatch(movie) {
 }
 
 // ── TMDB ──────────────────────────────────────────────────────────────────
-async function fetchMovies() {
+// Cap how deep into the "most popular for these filters" results we go, so
+// movies still have decent posters/overviews while leaving enough pages to
+// pick a random one from for variety between sessions.
+const TMDB_MAX_PAGE = 20;
+
+async function fetchMovies(genreId, decade) {
   const matchedSnap = await db.ref('matchedMovies').once('value');
   const matchedIds = new Set(Object.keys(matchedSnap.val() || {}).map(Number));
 
-  // Fetch 2 pages of popular movies and shuffle
-  const pages = [1, 2];
-  const results = await Promise.all(pages.map(p =>
-    fetch(`https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_API_KEY}&language=fr-FR&page=${p}`)
-      .then(r => r.json())
-      .then(d => d.results || [])
-  ));
-  const all = results.flat().filter(m => m.poster_path && m.overview && !matchedIds.has(m.id));
+  const params = new URLSearchParams({
+    api_key: TMDB_API_KEY,
+    language: 'fr-FR',
+    sort_by: 'popularity.desc',
+  });
+  if (genreId) params.set('with_genres', genreId);
+  if (decade === 'before1980') {
+    params.set('primary_release_date.lte', '1979-12-31');
+  } else if (decade) {
+    const start = parseInt(decade, 10);
+    params.set('primary_release_date.gte', `${start}-01-01`);
+    params.set('primary_release_date.lte', `${start + 9}-12-31`);
+  }
+
+  const discover = page =>
+    fetch(`https://api.themoviedb.org/3/discover/movie?${params}&page=${page}`).then(r => r.json());
+
+  const firstPage = await discover(1);
+  const totalPages = Math.min(firstPage.total_pages || 1, TMDB_MAX_PAGE);
+  const pages = [firstPage.results || []];
+
+  if (totalPages > 1) {
+    const randomPage = 2 + Math.floor(Math.random() * (totalPages - 1));
+    pages.push(await discover(randomPage).then(d => d.results || []));
+  }
+
+  const all = pages.flat().filter(m => m.poster_path && m.overview && !matchedIds.has(m.id));
   return shuffle(all).slice(0, MOVIES_PER_SESSION);
 }
 
